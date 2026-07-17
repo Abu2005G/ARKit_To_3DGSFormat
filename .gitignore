@@ -1,9 +1,7 @@
-outputs/
-*.obj
-*.ply
-*.pcd
-outputs/
-*.obj
-*.ply
-*.pcd
-outputs/
+__pycache__/
+*.pyc
+output/
+validation_outputs/
+*.zip
+.DS_Store
+.env

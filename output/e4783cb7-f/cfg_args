@@ -1,1 +1,0 @@
-Namespace(sh_degree=3, source_path='/home/vaseem/Documents/Trial_Output/17_July_PR3', model_path='./output/e4783cb7-f', images='images', depths='', resolution=-1, white_background=False, train_test_exp=False, data_device='cuda', eval=False)
