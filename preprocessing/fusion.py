@@ -88,14 +88,32 @@ class FusionEngine:
         if voxel_size > 0 and len(accumulated_cloud.points) > 0:
             accumulated_cloud = voxel_downsample(accumulated_cloud, voxel_size)
 
-        # Final filtering
+        # Final filtering — three-pass outlier removal for extreme noise reduction
         if run_sor and len(accumulated_cloud.points) > 0:
-            print("Applying Statistical Outlier Removal...")
+            print("Applying Statistical Outlier Removal (pass 1)...")
             accumulated_cloud, _ = statistical_outlier_removal(
                 accumulated_cloud,
                 nb_neighbors=SOR_NEIGHBORS,
                 std_ratio=SOR_STD_RATIO
             )
+            print("Applying Radius Outlier Removal (pass 2)...")
+            from preprocessing.config import ROR_NEIGHBORS, ROR_RADIUS, ROR2_NEIGHBORS, ROR2_RADIUS
+            from preprocessing.refinement import radius_outlier_removal
+            accumulated_cloud, _ = radius_outlier_removal(
+                accumulated_cloud,
+                nb_points=ROR_NEIGHBORS,
+                radius=ROR_RADIUS
+            )
+            # Intermediate voxel downsample to densify for 3rd pass effectiveness
+            if voxel_size > 0:
+                accumulated_cloud = voxel_downsample(accumulated_cloud, voxel_size)
+            print("Applying Radius Outlier Removal (pass 3 — extreme cleanup)...")
+            accumulated_cloud, _ = radius_outlier_removal(
+                accumulated_cloud,
+                nb_points=ROR2_NEIGHBORS,
+                radius=ROR2_RADIUS
+            )
 
         print(f"Fusion complete. Final point cloud contains {len(accumulated_cloud.points)} points.")
         return accumulated_cloud
+

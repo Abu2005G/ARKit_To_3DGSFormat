@@ -116,6 +116,7 @@ def estimate_normals(
     pcd: o3d.geometry.PointCloud,
     k_neighbors: int = 30,
     radius: float = 0.1,
+    orient_k: int = None,
 ) -> None:
     """
     Estimates normals for each point by fitting a local plane to its neighbors.
@@ -128,15 +129,23 @@ def estimate_normals(
         Number of neighbors for KD-tree search.
     radius : float
         Maximum distance threshold.
+    orient_k : int
+        k for orient_normals_consistent_tangent_plane.
+        If None, uses config NORMAL_ORIENT_K (default 20).
+        Wider values (15-30) help with thin/concave geometry.
     """
+    from preprocessing.config import NORMAL_ORIENT_K
+    if orient_k is None:
+        orient_k = NORMAL_ORIENT_K
+
     search_param = o3d.geometry.KDTreeSearchParamHybrid(
         radius=radius,
         max_nn=k_neighbors
     )
     pcd.estimate_normals(search_param=search_param)
     
-    # Orient normals consistently towards camera direction (here assumed to look active)
-    pcd.orient_normals_consistent_tangent_plane(k=k_neighbors)
+    # Orient normals consistently using tangent plane propagation
+    pcd.orient_normals_consistent_tangent_plane(k=orient_k)
 
 
 def segment_plane(

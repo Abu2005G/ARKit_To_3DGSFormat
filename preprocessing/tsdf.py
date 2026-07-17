@@ -37,6 +37,15 @@ class TSDFIntegrator:
         color_type : o3d.pipelines.integration.TSDFVolumeColorType
             Method for storing color inside voxel grid.
         """
+        # Issue 5: Check truncation ratio
+        from preprocessing.config import TSDF_MIN_TRUNC_RATIO
+        ratio = sdf_trunc / voxel_length if voxel_length > 0 else 0
+        if ratio < TSDF_MIN_TRUNC_RATIO:
+            old_trunc = sdf_trunc
+            sdf_trunc = voxel_length * TSDF_MIN_TRUNC_RATIO
+            print(f"  ⚠ TSDF sdf_trunc/voxel_length ratio was {ratio:.1f}x (below {TSDF_MIN_TRUNC_RATIO:.0f}x minimum).")
+            print(f"    Auto-adjusted sdf_trunc: {old_trunc:.4f} → {sdf_trunc:.4f} m")
+
         self.volume = o3d.pipelines.integration.ScalableTSDFVolume(
             voxel_length=voxel_length,
             sdf_trunc=sdf_trunc,

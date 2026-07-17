@@ -70,6 +70,22 @@ class PointCloudBuilder:
             (depth_val <= self.max_depth)
         )
 
+        # Depth discontinuity relative gradient filtering
+        from preprocessing.config import DEPTH_DISCONTINUITY_THRESHOLD
+        if DEPTH_DISCONTINUITY_THRESHOLD > 0:
+            diff_r = np.abs(frame.depth[:, 1:] - frame.depth[:, :-1])
+            diff_d = np.abs(frame.depth[1:, :] - frame.depth[:-1, :])
+            thresh_r = frame.depth[:, 1:] * DEPTH_DISCONTINUITY_THRESHOLD
+            thresh_d = frame.depth[1:, :] * DEPTH_DISCONTINUITY_THRESHOLD
+            
+            invalid = np.zeros_like(frame.depth, dtype=bool)
+            invalid[:, 1:] |= (diff_r > thresh_r)
+            invalid[:, :-1] |= (diff_r > thresh_r)
+            invalid[1:, :] |= (diff_d > thresh_d)
+            invalid[:-1, :] |= (diff_d > thresh_d)
+            
+            valid_mask &= (~invalid.flatten())
+
         valid_camera_points = camera_points[valid_mask]
         if valid_camera_points.shape[0] == 0:
             # Return empty PointCloud

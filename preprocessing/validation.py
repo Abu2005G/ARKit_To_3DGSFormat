@@ -228,3 +228,138 @@ def print_diagnostics(frame: RGBDFrame) -> None:
     print(f"  Pose (Depth): {results['pose_depth']['msg']}")
     print(f"  Tracking:     {results['tracking']['msg']}")
     print("-" * 35)
+
+
+def compute_coverage_diagnostic(
+    camera_centers: np.ndarray,
+    pcd_min: np.ndarray,
+    pcd_max: np.ndarray,
+    coverage_warn_ratio: float = None,
+    offset_warn_ratio: float = None,
+) -> Dict[str, Any]:
+    """
+    Compares the camera-center bounding box to the point cloud bounding box.
+    Prints warnings if camera coverage is below threshold on any axis or if
+    the camera cluster centroid is offset from the scene centroid.
+
+    Parameters
+    ----------
+    camera_centers : np.ndarray (N, 3)
+    pcd_min : np.ndarray (3,)
+    pcd_max : np.ndarray (3,)
+
+    Returns
+    -------
+    Dict with coverage ratios and offset information.
+    """
+    from preprocessing.config import COVERAGE_WARN_RATIO, COVERAGE_OFFSET_RATIO
+    if coverage_warn_ratio is None:
+        coverage_warn_ratio = COVERAGE_WARN_RATIO
+    if offset_warn_ratio is None:
+        offset_warn_ratio = COVERAGE_OFFSET_RATIO
+
+    cam_min = camera_centers.min(axis=0)
+    cam_max = camera_centers.max(axis=0)
+    cam_extent = cam_max - cam_min
+    scene_extent = pcd_max - pcd_min
+
+    # Per-axis coverage ratio
+    axis_names = ["X", "Y", "Z"]
+    coverage_ratios = np.zeros(3)
+    for i in range(3):
+        if scene_extent[i] > 1e-6:
+            coverage_ratios[i] = cam_extent[i] / scene_extent[i]
+        else:
+            coverage_ratios[i] = 1.0
+
+    # Centroid offset
+    cam_centroid = (cam_min + cam_max) / 2.0
+    scene_centroid = (pcd_min + pcd_max) / 2.0
+    offset = np.linalg.norm(cam_centroid - scene_centroid)
+    scene_diagonal = np.linalg.norm(scene_extent)
+    offset_ratio = offset / scene_diagonal if scene_diagonal > 1e-6 else 0.0
+
+    print("\n[Coverage Diagnostic]")
+    print(f"  Scene  Extent: {scene_extent[0]:.2f} x {scene_extent[1]:.2f} x {scene_extent[2]:.2f} m")
+    print(f"  Camera Extent: {cam_extent[0]:.2f} x {cam_extent[1]:.2f} x {cam_extent[2]:.2f} m")
+    for i in range(3):
+        status = "OK" if coverage_ratios[i] >= coverage_warn_ratio else "⚠ LOW"
+        print(f"  {axis_names[i]}-axis coverage: {coverage_ratios[i]*100:.1f}%  [{status}]")
+    print(f"  Centroid offset: {offset:.3f} m ({offset_ratio*100:.1f}% of scene diagonal)")
+
+    if any(coverage_ratios[i] < coverage_warn_ratio for i in range(3)):
+        print("  ⚠ WARNING: Camera coverage is sparse on one or more axes. Consider capturing more frames or using --sampling farthest_point.")
+    if offset_ratio > offset_warn_ratio:
+        print("  ⚠ WARNING: Camera cluster is significantly off-center from the scene.")
+
+    return {
+        "coverage_ratios": coverage_ratios,
+        "offset_ratio": offset_ratio,
+        "cam_extent": cam_extent,
+        "scene_extent": scene_extent,
+    }
+
+
+def detect_pose_jumps(
+    dataset,
+    indices: list,
+    multiplier: float = None,
+) -> list:
+    """
+    Detects consecutive frame pairs where camera center displacement
+    exceeds multiplier × median inter-frame displacement.
+
+    Parameters
+    ----------
+    dataset : ARKitDataset
+    indices : list of int
+    multiplier : float
+
+    Returns
+    -------
+    list of tuples (idx_a, idx_b, displacement, threshold)
+    """
+    from preprocessing.config import POSE_JUMP_MULTIPLIER
+    if multiplier is None:
+        multiplier = POSE_JUMP_MULTIPLIER
+
+    if len(indices) < 2:
+        return []
+
+    # Extract camera centers for all selected frames
+    centers = []
+    for idx in indices:
+        frame = dataset[idx]
+        T_c2w = frame.camera_rgb.pose
+        centers.append(T_c2w[:3, 3].copy())
+    centers = np.array(centers)
+
+    # Compute consecutive displacements
+    displacements = np.linalg.norm(np.diff(centers, axis=0), axis=1)
+
+    if len(displacements) == 0:
+        return []
+
+    median_disp = np.median(displacements)
+    threshold = multiplier * median_disp
+    mean_disp = np.mean(displacements)
+
+    flagged = []
+    for i, d in enumerate(displacements):
+        if d > threshold:
+            flagged.append((indices[i], indices[i + 1], d, threshold))
+
+    print(f"\n[Pose Trajectory Analysis]")
+    print(f"  Frames analyzed: {len(indices)}")
+    print(f"  Mean inter-frame displacement: {mean_disp:.4f} m")
+    print(f"  Median inter-frame displacement: {median_disp:.4f} m")
+    print(f"  Jump threshold ({multiplier:.1f}x median): {threshold:.4f} m")
+
+    if flagged:
+        print(f"  ⚠ {len(flagged)} pose jump(s) detected:")
+        for idx_a, idx_b, d, thr in flagged:
+            print(f"    frame_{idx_a:06d} → frame_{idx_b:06d}: {d:.4f} m (threshold: {thr:.4f} m)")
+    else:
+        print("  ✓ No pose jumps detected.")
+
+    return flagged

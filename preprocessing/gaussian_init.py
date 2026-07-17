@@ -174,6 +174,20 @@ class GaussianInitializer:
         # ----------------------------
         # 3. Write points3D.txt & points3D.ply
         # ----------------------------
+        # Downsample point cloud if excessively dense to prevent 3DGS over-densification noise
+        from preprocessing.config import GS_INIT_VOXEL_SIZE
+        if len(fused_cloud.points) > 100000:
+            print(f"Downsampling initialization point cloud from {len(fused_cloud.points)} points...")
+            fused_cloud = fused_cloud.voxel_down_sample(voxel_size=GS_INIT_VOXEL_SIZE)
+            print(f"Downsampled to {len(fused_cloud.points)} points for optimal 3DGS initialization.")
+
+        # Ensure the point cloud has normals so the 3DGS PlyReader does not crash
+        if not fused_cloud.has_normals():
+            print("Estimating normals for initialization point cloud...")
+            fused_cloud.estimate_normals(
+                search_param=o3d.geometry.KDTreeSearchParamHybrid(radius=0.1, max_nn=30)
+            )
+
         # Save points3D.ply directly into the sparse/0 folder
         points_ply_path = self.sparse_dir / "points3D.ply"
         save_pointcloud(fused_cloud, points_ply_path)
